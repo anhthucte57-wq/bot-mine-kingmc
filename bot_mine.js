@@ -7,11 +7,16 @@ app.use(express.json());
 // ==========================================
 // CẤU HÌNH CỦA BẠN (SỬA CÁC DÒNG NÀY)
 // ==========================================
-const SERVER_HOST = 'kingmc.vn'; 
+const SERVER_HOST = 'play.kingmc.vn'; 
 const SERVER_PORT = 25565;
-const BOT_USERNAME = '_DTM'; // Đã sửa thành _DTM
+const BOT_USERNAME = '_DTM'; 
+const PASSWORD = 'ditmemay.com'; 
 const BOT_VERSION = '1.20.1'; 
-const PASSWORD = 'ditmemay.com'; // Đã sửa thành dấu phẩy
+
+// Địa chỉ VPS chạy Bot Discord của bạn
+const DISCORD_WEBHOOK_URL = "http://ord-804768-2261.cldcode.host:24950/api/game_payment";
+// API Key bảo mật (Phải khớp bên file bot.py)
+const API_KEY = process.env.API_KEY || "mat_khau_bao_mat_123"; 
 
 // ==========================================
 // KHỞI TẠO & LOGIC CHÍNH
@@ -70,14 +75,6 @@ function startBot() {
   });
 
   bot.on('windowOpen', (window) => {
-    let titleStr = "";
-    try {
-      if (typeof window.title === 'string') titleStr = window.title;
-      else titleStr = JSON.stringify(window.title);
-    } catch (e) { titleStr = "Unknown"; }
-    
-    console.log(`[GUI] Đã mở bảng: ${titleStr}`);
-    
     if (!isInMainServer) {
       setTimeout(() => {
         const slotToClick = 24; 
@@ -85,10 +82,30 @@ function startBot() {
           bot.clickWindow(slotToClick, 0, 0);
           console.log(`[GUI] Đã click ô 25 để vào KingSMP!`);
           isInMainServer = true; 
+          console.log(`✅ [MAIN] Đã vào KingSMP! Sẵn sàng Nạp/Rút.`);
         } catch (e) {
           console.log(`[LỖI] Không click được: ${e}`);
         }
       }, 1000);
+    }
+  });
+
+  bot.on('message', async (jsonMsg) => {
+    const msg = jsonMsg.toString();
+    
+    if (msg.includes("Bạn đã nhận được") || msg.includes("Bạn nhận được")) {
+      console.log(`💰 [TIỀN VÀO] ${msg}`);
+      
+      try {
+        await fetch(DISCORD_WEBHOOK_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message: msg })
+        });
+        console.log(`[API] Đã báo tiền nạp về Discord.`);
+      } catch (error) {
+        console.log(`❌ [API LỖI] Không gửi được webhook: ${error.message}`);
+      }
     }
   });
 
@@ -111,19 +128,25 @@ function startBot() {
 startBot();
 
 // ==========================================
-// API NHẬN LỆNH TỪ BOT DISCORD (TRẢ TIỀN)
+// API RÚT TIỀN (TỪ BOT DISCORD GỌI SANG)
 // ==========================================
 app.post('/pay', (req, res) => {
-  const { ign, amount } = req.body;
-  if (!isInMainServer || !globalBot) {
-    return res.status(400).send({ status: 'error', message: 'Bot chưa vào server chính' });
-  }
+  const authHeader = req.headers['authorization'];
+  if (authHeader !== `Bearer ${API_KEY}`) return res.status(401).send({ status: 'error', message: 'Sai API Key' });
   
-  globalBot.chat(`/pay ${ign} ${amount}`);
-  console.log(`[PAY] Đã gửi lệnh: /pay ${ign} ${amount}`);
-  res.send({ status: 'success' });
+  const { ign, amount } = req.body;
+  
+  if (!isInMainServer || !globalBot) return res.status(400).send({ status: 'error', message: 'Bot chưa vào server chính' });
+  
+  try {
+    // ✅ ĐÃ SỬA: Thêm chữ "M" vào sau số tiền (1 PCoin = 1M trong game)
+    globalBot.chat(`/pay ${ign} ${amount}M`);
+    console.log(`[PAY] Đã gửi lệnh: /pay ${ign} ${amount}M`);
+    res.send({ status: 'success' });
+  } catch (e) { 
+    res.status(500).send({ status: 'error', message: e.message }); 
+  }
 });
 
-app.listen(3000, () => {
-  console.log('🌐 API Bot Mine đang chạy ở cổng 3000');
-});
+app.get('/', (req, res) => res.send({ status: 'ok', botConnected: !!globalBot, inMainServer: isInMainServer }));
+app.listen(process.env.PORT || 3000, () => console.log('🌐 API chạy ở cổng ' + (process.env.PORT || 3000)));
