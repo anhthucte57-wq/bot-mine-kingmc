@@ -139,9 +139,11 @@ app.post('/pay', (req, res) => {
   if (!isInMainServer || !globalBot) return res.status(400).send({ status: 'error', message: 'Bot chưa vào server chính' });
   
   try {
-    // ✅ ĐÃ SỬA: Thêm chữ "M" vào sau số tiền (1 PCoin = 1M trong game)
-    globalBot.chat(`/pay ${ign} ${amount}M`);
-    console.log(`[PAY] Đã gửi lệnh: /pay ${ign} ${amount}M`);
+    // ✅ SỬA LỖI TẠI ĐÂY: Nhân số PCoin với 1.000.000 để ra số Mon chính xác
+    const amountToPay = amount * 1000000; 
+    
+    globalBot.chat(`/pay ${ign} ${amountToPay}`);
+    console.log(`[PAY] Đã gửi lệnh: /pay ${ign} ${amountToPay} (Từ ${amount} PCoin)`);
     res.send({ status: 'success' });
   } catch (e) { 
     res.status(500).send({ status: 'error', message: e.message }); 
