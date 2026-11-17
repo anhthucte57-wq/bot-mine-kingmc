@@ -1,9 +1,9 @@
 {
   "name": "kingmc-bot",
   "version": "1.0.0",
-  "main": "bot.js",
+  "main": "bot_mine.js",
   "scripts": {
-    "start": "node bot.js"
+    "start": "node bot_mine.js"
   },
   "dependencies": {
     "express": "^4.18.2",
