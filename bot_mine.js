@@ -2,26 +2,32 @@ const mineflayer = require('mineflayer');
 const express = require('express');
 const { WebSocketServer } = require('ws');
 const http = require('http');
-const fs = require('fs');
-const path = require('path');
 
 const app = express();
 app.use(express.json());
 
-// Cấu hình Server & Lịch trình
+// ==========================================
+// CẤU HÌNH SERVER & LỊCH TRÌNH
+// ==========================================
 const SERVER_HOST = 'play.kingmc.vn';
 const SERVER_PORT = 25565;
-const BOT_VERSION = '1.21.11'; 
-const TZ = 'Asia/Ho_Chi_Minh';
-const OFF_HOUR = 4, OFF_MIN = 30;
-const ON_HOUR = 6, ON_MIN = 0;
+const BOT_VERSION = '1.21.11'; // Phiên bản chuẩn của KingMC
 
-// DANH SÁCH ACC (Thêm acc của bạn vào đây)
+const TZ = 'Asia/Ho_Chi_Minh';
+const OFF_HOUR = 4, OFF_MIN = 30; // 04:30 Off
+const ON_HOUR = 6, ON_MIN = 0;    // 06:00 On
+
+// ==========================================
+// DANH SÁCH TÀI KHOẢN (SỬA ACC Ở ĐÂY)
+// ==========================================
 let ACCOUNTS = [
   { id: 1, username: 'BuilderSucVat', password: 'Zb7ZhMzgf9', isMain: true },
   { id: 2, username: 'BaoChauCX', password: 'manhdepzai', isMain: false }
 ];
 
+// ==========================================
+// QUẢN LÝ TRẠNG THÁI
+// ==========================================
 let bots = {}; 
 let botStatus = {}; 
 let botLogs = {}; 
@@ -32,18 +38,30 @@ ACCOUNTS.forEach(acc => {
     botLogs[acc.username] = [];
 });
 
-// Hàm tiện ích
+// ==========================================
+// HÀM TIỆN ÍCH
+// ==========================================
 function getVnTime() {
   const parts = new Intl.DateTimeFormat('en-GB', { timeZone: TZ, hour: '2-digit', minute: '2-digit', hour12: false }).formatToParts(new Date());
   return { h: parseInt(parts.find(p => p.type === 'hour').value, 10), m: parseInt(parts.find(p => p.type === 'minute').value, 10) };
 }
+
 function isSleepWindow() {
   const { h, m } = getVnTime();
   const nowMin = h * 60 + m;
   return nowMin >= (OFF_HOUR * 60 + OFF_MIN) && nowMin < (ON_HOUR * 60 + ON_MIN);
 }
 
-// LOGIC BOT
+function logToBot(username, msg) {
+    if(!botLogs[username]) botLogs[username] = [];
+    botLogs[username].push("[" + new Date().toLocaleTimeString('vi-VN') + "] " + msg);
+    if(botLogs[username].length > 50) botLogs[username].shift();
+    console.log("[" + username + "] " + msg);
+}
+
+// ==========================================
+// LOGIC CHÍNH CỦA BOT
+// ==========================================
 function startSingleBot(account) {
   const { username, password } = account;
   if (isSleepWindow() || bots[username]) return;
@@ -55,20 +73,24 @@ function startSingleBot(account) {
   let afkInterval = null;
 
   const bot = mineflayer.createBot({
-    host: SERVER_HOST, port: SERVER_PORT, username: username, version: BOT_VERSION, hideErrors: true
+    host: SERVER_HOST, 
+    port: SERVER_PORT, 
+    username: username, 
+    version: BOT_VERSION, 
+    hideErrors: true
   });
   bots[username] = bot;
 
   bot.on('kicked', (reason) => {
     botStatus[username] = "Bị đá (Kicked)";
-    logToBot(username, `⛔ Bị đá: ${reason}`);
+    logToBot(username, "⛔ Bị đá: " + reason);
   });
 
   bot.on('spawn', () => {
     botStatus[username] = "Đang ở sảnh";
     logToBot(username, "✅ Đã vào sảnh chờ!");
     
-    setTimeout(() => { bot.chat(`/dn ${password}`); }, 3000);
+    setTimeout(() => { bot.chat('/dn ' + password); }, 3000);
     
     setTimeout(() => {
       if (!isInMainServer) { bot.chat('/menu'); }
@@ -79,17 +101,17 @@ function startSingleBot(account) {
     if (!isInMainServer) {
       setTimeout(() => {
         try {
-          bot.clickWindow(13, 0, 0); // Click KingSMP
+          bot.clickWindow(13, 0, 0); // Click vào ô KingSMP (slot 13)
           isInMainServer = true;
           botStatus[username] = "Đang vào KingSMP";
           logToBot(username, "✅ Đã click vào KingSMP!");
           setTimeout(() => { bot.chat('/afk'); }, 2000);
-        } catch (e) { logToBot(username, `Lỗi click: ${e.message}`); }
+        } catch (e) { logToBot(username, "Lỗi click GUI: " + e.message); }
       }, 1000);
     } else if (!hasClickedAfkMenu) {
       setTimeout(() => {
         try {
-          bot.clickWindow(7, 0, 0); // Click Khu AFK số 8
+          bot.clickWindow(7, 0, 0); // Click vào ô AFK số 8 (slot 7)
           hasClickedAfkMenu = true;
           logToBot(username, "✅ Đã vào khu AFK số 8!");
           
@@ -104,7 +126,7 @@ function startSingleBot(account) {
               }, 5000);
             }, 1500);
           }
-        } catch (e) { logToBot(username, `Lỗi click AFK: ${e.message}`); }
+        } catch (e) { logToBot(username, "Lỗi click AFK: " + e.message); }
       }, 1000);
     }
   });
@@ -114,8 +136,8 @@ function startSingleBot(account) {
     delete bots[username];
     if (afkInterval) clearInterval(afkInterval);
     if (!isSleeping) {
-      logToBot(username, "❌ Mất kết nối, thử lại sau 10s...");
-      setTimeout(() => startSingleBot(account), 10000);
+      logToBot(username, "❌ Mất kết nối, thử lại sau 15s...");
+      setTimeout(() => startSingleBot(account), 15000); // Đợi 15s tránh spam
     }
   });
 
@@ -135,6 +157,9 @@ function startAllBots() {
   });
 }
 
+// ==========================================
+// BỘ HẸN GIỜ OFF / ON
+// ==========================================
 setInterval(() => {
   const inSleep = isSleepWindow();
   if (inSleep && !isSleeping) {
@@ -149,17 +174,11 @@ setInterval(() => {
 
 startAllBots();
 
-// Lưu Log
-function logToBot(username, msg) {
-    if(!botLogs[username]) botLogs[username] = [];
-    botLogs[username].push(`[${new Date().toLocaleTimeString('vi-VN')}] ${msg}`);
-    if(botLogs[username].length > 50) botLogs[username].shift();
-    console.log(`[${username}] ${msg}`);
-}
-
-// ================= GIAO DIỆN WEB =================
+// ==========================================
+// GIAO DIỆN WEB QUẢN LÝ
+// ==========================================
 app.get('/', (req, res) => {
-  res.send(`
+  let html = `
   <!DOCTYPE html>
   <html lang="vi">
   <head>
@@ -187,8 +206,7 @@ app.get('/', (req, res) => {
     <div class="container">
       <h1>🤖 Tool Quản Lý Bot KingMC</h1>
       <div class="card">
-        <h3>Hệ thống: <span style="color: ${isSleeping ? '#f57c00' : '#4CAF50'}">${isSleeping ? '😴 Đang ngủ đông' : '🟢 Đang hoạt động'}</span></h3>
-        <button class="btn btn-cmd" onclick="sendCmd('all', 'say Hello')">Test Lệnh All</button>
+        <h3>Hệ thống: <span style="color: ${isSleeping ? '#f57c00' : '#4CAF50'}">${isSleeping ? '😴 Đang ngủ đông (04:30-06:00)' : '🟢 Đang hoạt động'}</span></h3>
       </div>
       <div class="card">
         <table>
@@ -200,7 +218,7 @@ app.get('/', (req, res) => {
             </tr>
           </thead>
           <tbody id="bot-list">
-            <!-- Javascript sẽ render ở đây -->
+            <!-- JS render -->
           </tbody>
         </table>
       </div>
@@ -228,16 +246,7 @@ app.get('/', (req, res) => {
         tbody.innerHTML = '';
         bots.forEach(bot => {
           let statusClass = bot.status.includes('AFK') || bot.status.includes('KingSMP') ? 'online' : (bot.status.includes('Offline') ? 'offline' : 'sleeping');
-          tbody.innerHTML += \`
-            <tr>
-              <td><b>\${bot.username}</b></td>
-              <td><span class="status \${statusClass}">\${bot.status}</span></td>
-              <td>
-                <button class="btn btn-pay" onclick="pay('\${bot.username}')">Chat /pay</button>
-                <button class="btn btn-cmd" onclick="showLogs('\${bot.username}')">Xem Log</button>
-              </td>
-            </tr>
-          \`;
+          tbody.innerHTML += '<tr><td><b>' + bot.username + '</b></td><td><span class="status ' + statusClass + '">' + bot.status + '</span></td><td><button class="btn btn-pay" onclick="pay(\\'' + bot.username + '\\')">Chat /pay</button><button class="btn btn-cmd" onclick="showLogs(\\'' + bot.username + '\\')">Xem Log</button></td></tr>';
         });
       }
 
@@ -249,10 +258,6 @@ app.get('/', (req, res) => {
           .then(r => r.json()).then(d => alert(d.message));
       }
 
-      function sendCmd(bot, cmd) {
-        fetch('/api/cmd', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ bot, command: cmd }) });
-      }
-
       function showLogs(username) {
         currentLogBot = username;
         document.getElementById('log-container').style.display = 'block';
@@ -262,68 +267,60 @@ app.get('/', (req, res) => {
 
       function renderLogs(logs) {
         const box = document.getElementById('log-content');
-        box.innerHTML = logs.map(l => \`<div>\${l}</div>\`).join('');
+        box.innerHTML = logs.map(l => '<div>' + l + '</div>').join('');
         box.scrollTop = box.scrollHeight;
       }
     </script>
   </body>
   </html>
-  `);
+  `;
+  res.send(html);
 });
 
-// ================= API =================
+// ==========================================
+// API RÚT TIỀN
+// ==========================================
 app.post('/api/pay', (req, res) => {
   const { bot: username, ign, amount } = req.body;
   const bot = bots[username];
   if (!bot) return res.json({ success: false, message: 'Bot chưa online' });
   
-  bot.chat(\`/pay \${ign} \${amount * 1000000}\`);
-  res.json({ success: true, message: \`Đã gửi lệnh từ \${username}\` });
+  bot.chat('/pay ' + ign + ' ' + (amount * 1000000));
+  res.json({ success: true, message: 'Đã gửi lệnh từ ' + username });
 });
 
-app.post('/api/cmd', (req, res) => {
-  const { bot: username, command } = req.body;
-  const bot = bots[username];
-  if (bot) bot.chat(command);
-  res.json({ success: true });
-});
-
-// ================= WEBSOCKET REALTIME =================
+// ==========================================
+// WEBSOCKET REAL-TIME
+// ==========================================
 const server = http.createServer(app);
 const wss = new WebSocketServer({ server });
 const clients = new Set();
 
 wss.on('connection', (ws) => {
   clients.add(ws);
-  // Gửi trạng thái ban đầu
   const initialStatus = ACCOUNTS.map(a => ({ username: a.username, status: botStatus[a.username] }));
   ws.send(JSON.stringify({ type: 'status', bots: initialStatus }));
 
   ws.on('message', (msg) => {
-    const data = JSON.parse(msg);
-    if (data.type === 'subscribe') {
-      ws.send(JSON.stringify({ type: 'logs', username: data.username, logs: botLogs[data.username] || [] }));
-    }
+    try {
+        const data = JSON.parse(msg);
+        if (data.type === 'subscribe') {
+          ws.send(JSON.stringify({ type: 'logs', username: data.username, logs: botLogs[data.username] || [] }));
+        }
+    } catch(e){}
   });
   ws.on('close', () => clients.delete(ws));
 });
 
-// Bắn trạng thái và logs mỗi 2 giây
 setInterval(() => {
   const statusList = ACCOUNTS.map(a => ({ username: a.username, status: botStatus[a.username] }));
   const payload = JSON.stringify({ type: 'status', bots: statusList });
   for (const client of clients) {
     if (client.readyState === 1) client.send(payload);
   }
-  
-  // Bắn logs cho ai đang xem
-  for (const client of clients) {
-    if (client.readyState === 1) {
-      // (Có thể tối ưu gửi logs ở đây nếu cần)
-    }
-  }
 }, 2000);
 
+// Mở cổng chạy
 server.listen(process.env.PORT || 3000, () => {
-  console.log('🌐 Tool chạy tại cổng ' + (process.env.PORT || 3000));
+  console.log('🌐 Tool & Web chạy tại cổng ' + (process.env.PORT || 3000));
 });
