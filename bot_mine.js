@@ -5,150 +5,250 @@ const app = express();
 app.use(express.json());
 
 // ==========================================
-// CẤU HÌNH CỦA BẠN (SỬA CÁC DÒNG NÀY)
+// CẤU HÌNH SERVER & LỊCH TRÌNH
 // ==========================================
-const SERVER_HOST = 'play.kingmc.vn'; 
+const SERVER_HOST = 'play.kingmc.vn';
 const SERVER_PORT = 25565;
-const BOT_USERNAME = '_DTM'; 
-const PASSWORD = 'ditmemay.com'; 
-const BOT_VERSION = '1.20.1'; 
+const BOT_VERSION = '1.20.1';
 
-// Địa chỉ VPS chạy Bot Discord của bạn
-const DISCORD_WEBHOOK_URL = "http://ord-804768-2261.cldcode.host:24950/api/game_payment";
-// API Key bảo mật (Phải khớp bên file bot.py)
-const API_KEY = process.env.API_KEY || "mat_khau_bao_mat_123"; 
+const API_KEY = process.env.API_KEY || "mat_khau_bao_mat_123";
+
+const TZ = 'Asia/Ho_Chi_Minh';
+const OFF_HOUR = 4, OFF_MIN = 30;
+const ON_HOUR  = 6, ON_MIN  = 0;
 
 // ==========================================
-// KHỞI TẠO & LOGIC CHÍNH
+// DANH SÁCH TÀI KHOẢN (SỬA TÊN VÀ PASS Ở ĐÂY)
 // ==========================================
-let globalBot = null; 
-let isInMainServer = false;
-let joinAttempt = 0; 
-let hasLoggedIn = false; 
+const ACCOUNTS = [
+  { username: '_DTM', password: 'ditmemay.com', isMain: true },  // Acc chính (dùng để rút tiền)
+  { username: 'Pumtrummod', password: 'manhne11', isMain: false } // Acc phụ (sửa lại pass)
+];
 
-function startBot() {
-  joinAttempt++;
-  hasLoggedIn = false; 
-  console.log(`\n🔄 [LẦN ${joinAttempt}] Đang kết nối vào server...`);
-  
-  const bot = mineflayer.createBot({
-    host: SERVER_HOST,
-    port: SERVER_PORT,
-    username: BOT_USERNAME,
-    version: BOT_VERSION,
-    hideErrors: true,
-    checkTimeoutInterval: 120000
-  });
-  
-  globalBot = bot; 
+// ==========================================
+// HÀM TIỆN ÍCH THỜI GIAN
+// ==========================================
+function getVnTime() {
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: TZ, hour: '2-digit', minute: '2-digit', hour12: false
+  }).formatToParts(new Date());
+  const h = parseInt(parts.find(p => p.type === 'hour').value, 10);
+  const m = parseInt(parts.find(p => p.type === 'minute').value, 10);
+  return { h, m };
+}
 
-  bot.on('error', (err) => {
-    if (err.code !== 'ECONNRESET') console.log(`[LỖI] ${err.message}`);
-  });
+function isSleepWindow() {
+  const { h, m } = getVnTime();
+  const nowMin = h * 60 + m;
+  const offMin = OFF_HOUR * 60 + OFF_MIN;
+  const onMin  = ON_HOUR  * 60 + ON_MIN;
+  return nowMin >= offMin && nowMin < onMin;
+}
 
-  bot.on('spawn', () => {
-    console.log(`✅ [LẦN ${joinAttempt}] Đã vào sảnh chờ!`);
-    
-    if (joinAttempt === 1) {
-      console.log(`⏳ [CHỐNG BOT] Đang ở bảng xác nhận. Tự động out sau 3 giây...`);
-      setTimeout(() => {
-        console.log(`🚪 Tự động ngắt kết nối (Quit).`);
-        bot.quit(); 
-      }, 3000); 
-    } else {
+// ==========================================
+// QUẢN LÝ BOT
+// ==========================================
+let bots = {}; 
+let isSleeping = false;
+
+function startSingleBot(account) {
+  const { username, password, isMain } = account;
+  const logPrefix = `[${username}]`;
+
+  if (isSleepWindow()) return;
+  if (bots[username]) {
+    try { bots[username].quit(); } catch(e){}
+  }
+
+  let joinAttempt = 0;
+  let hasLoggedIn = false;
+  let isInMainServer = false;
+  let hasClickedAfkMenu = false;
+  let reconnectTimer = null;
+  let afkInterval = null;
+
+  function connect() {
+    if (isSleepWindow()) return;
+    joinAttempt++;
+    hasLoggedIn = false;
+    isInMainServer = false;
+    hasClickedAfkMenu = false;
+    console.log(`\n${logPrefix} 🔄 [LẦN ${joinAttempt}] Đang kết nối...`);
+
+    const bot = mineflayer.createBot({
+      host: SERVER_HOST,
+      port: SERVER_PORT,
+      username: username,
+      version: BOT_VERSION,
+      hideErrors: true,
+      checkTimeoutInterval: 120000
+    });
+
+    bots[username] = bot;
+
+    bot.on('error', (err) => {
+      if (err.code !== 'ECONNRESET') console.log(`${logPrefix} [LỖI] ${err.message}`);
+    });
+
+    bot.on('spawn', () => {
+      console.log(`${logPrefix} ✅ Đã vào sảnh chờ!`);
       if (hasLoggedIn) return;
       hasLoggedIn = true;
 
+      // Đăng nhập
       setTimeout(() => {
-        console.log(`[AUTH] Gửi lệnh đăng nhập: /dn ${PASSWORD}`);
-        bot.chat(`/dn ${PASSWORD}`);
+        bot.chat(`/dn ${password}`);
+        console.log(`${logPrefix} [AUTH] Gửi lệnh đăng nhập.`);
       }, 2000);
 
+      // Mở đồng hồ (ô 5)
       setTimeout(() => {
         if (!isInMainServer) {
-          console.log(`[GUI] Đang chọn ô đồng hồ (ô thứ 5) để mở Menu...`);
-          bot.setQuickBarSlot(4); 
-          bot.activateItem(); 
+          bot.setQuickBarSlot(4);
+          bot.activateItem();
         }
       }, 6000);
-    }
-  });
+    });
 
-  bot.on('windowOpen', (window) => {
-    if (!isInMainServer) {
-      setTimeout(() => {
-        const slotToClick = 24; 
-        try {
-          bot.clickWindow(slotToClick, 0, 0);
-          console.log(`[GUI] Đã click ô 25 để vào KingSMP!`);
-          isInMainServer = true; 
-          console.log(`✅ [MAIN] Đã vào KingSMP! Sẵn sàng Nạp/Rút.`);
-        } catch (e) {
-          console.log(`[LỖI] Không click được: ${e}`);
-        }
-      }, 1000);
-    }
-  });
-
-  bot.on('message', async (jsonMsg) => {
-    const msg = jsonMsg.toString();
-    
-    if (msg.includes("Bạn đã nhận được") || msg.includes("Bạn nhận được")) {
-      console.log(`💰 [TIỀN VÀO] ${msg}`);
-      
-      try {
-        await fetch(DISCORD_WEBHOOK_URL, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ message: msg })
-        });
-        console.log(`[API] Đã báo tiền nạp về Discord.`);
-      } catch (error) {
-        console.log(`❌ [API LỖI] Không gửi được webhook: ${error.message}`);
+    bot.on('windowOpen', (window) => {
+      if (!isInMainServer) {
+        // Click ô 25 để vào KingSMP
+        setTimeout(() => {
+          try {
+            bot.clickWindow(24, 0, 0);
+            isInMainServer = true;
+            console.log(`${logPrefix} ✅ Đã vào KingSMP! Chuẩn bị /afk...`);
+            
+            // Gõ lệnh /afk
+            setTimeout(() => {
+              bot.chat('/afk');
+              console.log(`${logPrefix} [AFK] Gửi lệnh /afk`);
+            }, 2000);
+          } catch (e) {
+            console.log(`${logPrefix} [LỖI GUI] ${e.message}`);
+          }
+        }, 1000);
+      } else if (!hasClickedAfkMenu) {
+        // Menu Chọn Khu AFK hiện ra -> Click ô số 8 (slot 7)
+        setTimeout(() => {
+          try {
+            bot.clickWindow(7, 0, 0);
+            hasClickedAfkMenu = true;
+            console.log(`${logPrefix} [AFK] Đã click vào ô số 8 (Khu AFK).`);
+          } catch (e) {
+            console.log(`${logPrefix} [LỖI AFK MENU] ${e.message}`);
+          }
+        }, 1000);
       }
-    }
-  });
+    });
 
-  bot.on('end', (reason) => {
-    console.log(`❌ Bot ngắt kết nối. Lý do: ${reason}`);
-    if (joinAttempt === 1 || !isInMainServer) {
-      console.log(`🔄 Tự động kết nối lại...`);
-      setTimeout(startBot, 3000); 
-    }
-  });
-  
-  setInterval(() => {
-    if (isInMainServer && bot.entity) {
-      bot.setControlState('jump', true);
-      setTimeout(() => bot.setControlState('jump', false), 500);
-    }
-  }, 30000);
+    bot.on('end', (reason) => {
+      console.log(`${logPrefix} ❌ Ngắt kết nối. Lý do: ${reason}`);
+      if (bots[username] === bot) delete bots[username];
+      if (afkInterval) clearInterval(afkInterval);
+
+      if (isSleeping) return;
+
+      if (joinAttempt === 1 || !isInMainServer) {
+        if (reconnectTimer) clearTimeout(reconnectTimer);
+        reconnectTimer = setTimeout(connect, 3000);
+      }
+    });
+
+    // Jump AFK mỗi 30s
+    afkInterval = setInterval(() => {
+      if (isSleeping || !bot.entity) return;
+      if (isInMainServer) {
+        bot.setControlState('jump', true);
+        setTimeout(() => bot.setControlState('jump', false), 500);
+      }
+    }, 30000);
+  }
+
+  connect();
 }
 
-startBot();
+// ==========================================
+// KHỞI ĐỘNG TẤT CẢ BOT
+// ==========================================
+function startAllBots() {
+  if (isSleepWindow()) {
+    isSleeping = true;
+    console.log(`😴 [SLEEP] Đang trong giờ nghỉ (04:30–06:00). Không kết nối.`);
+    return;
+  }
+  isSleeping = false;
+  
+  // Giãn cách 5 giây giữa các acc để tránh bị kick
+  ACCOUNTS.forEach((acc, index) => {
+    setTimeout(() => {
+      if (!isSleeping) startSingleBot(acc);
+    }, index * 5000); 
+  });
+}
 
 // ==========================================
-// API RÚT TIỀN (TỪ BOT DISCORD GỌI SANG)
+// BỘ HẸN GIỜ OFF / ON
+// ==========================================
+setInterval(() => {
+  const inSleep = isSleepWindow();
+
+  if (inSleep && !isSleeping) {
+    console.log(`⏰ [SCHEDULE] Đã tới 04:30 — Tắt TẤT CẢ bot.`);
+    isSleeping = true;
+    for (const username in bots) {
+      try { bots[username].quit(); } catch (e) {}
+    }
+    bots = {};
+    return;
+  }
+
+  if (!inSleep && isSleeping) {
+    console.log(`⏰ [SCHEDULE] Đã tới 06:00 — Bật TẤT CẢ bot lại.`);
+    isSleeping = false;
+    startAllBots();
+  }
+}, 30 * 1000);
+
+// Chạy lần đầu
+startAllBots();
+
+// ==========================================
+// API RÚT TIỀN (DÀNH CHO ACC CHÍNH)
 // ==========================================
 app.post('/pay', (req, res) => {
   const authHeader = req.headers['authorization'];
-  if (authHeader !== `Bearer ${API_KEY}`) return res.status(401).send({ status: 'error', message: 'Sai API Key' });
-  
+  if (authHeader !== `Bearer ${API_KEY}`)
+    return res.status(401).send({ status: 'error', message: 'Sai API Key' });
+
   const { ign, amount } = req.body;
+
+  if (isSleeping)
+    return res.status(400).send({ status: 'error', message: 'Bot đang trong giờ nghỉ' });
+
+  const mainAccount = ACCOUNTS.find(a => a.isMain);
+  if (!mainAccount) return res.status(500).send({ status: 'error', message: 'Chưa cấu hình acc chính' });
   
-  if (!isInMainServer || !globalBot) return res.status(400).send({ status: 'error', message: 'Bot chưa vào server chính' });
-  
+  const mainBot = bots[mainAccount.username];
+  if (!mainBot) return res.status(400).send({ status: 'error', message: 'Acc chính chưa online' });
+
   try {
-    // ✅ SỬA LỖI TẠI ĐÂY: Nhân số PCoin với 1.000.000 để ra số Mon chính xác
-    const amountToPay = amount * 1000000; 
-    
-    globalBot.chat(`/pay ${ign} ${amountToPay}`);
-    console.log(`[PAY] Đã gửi lệnh: /pay ${ign} ${amountToPay} (Từ ${amount} PCoin)`);
+    const amountToPay = amount * 1000000;
+    mainBot.chat(`/pay ${ign} ${amountToPay}`);
+    console.log(`[PAY] [${mainAccount.username}] Đã gửi: /pay ${ign} ${amountToPay}`);
     res.send({ status: 'success' });
-  } catch (e) { 
-    res.status(500).send({ status: 'error', message: e.message }); 
+  } catch (e) {
+    res.status(500).send({ status: 'error', message: e.message });
   }
 });
 
-app.get('/', (req, res) => res.send({ status: 'ok', botConnected: !!globalBot, inMainServer: isInMainServer }));
-app.listen(process.env.PORT || 3000, () => console.log('🌐 API chạy ở cổng ' + (process.env.PORT || 3000)));
+app.get('/', (req, res) => res.send({
+  status: 'ok',
+  sleeping: isSleeping,
+  botsOnline: Object.keys(bots).length,
+  botsList: Object.keys(bots)
+}));
+
+app.listen(process.env.PORT || 3000, () =>
+  console.log('🌐 API chạy ở cổng ' + (process.env.PORT || 3000))
+);
