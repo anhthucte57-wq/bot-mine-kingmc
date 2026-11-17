@@ -9,7 +9,7 @@ app.use(express.json());
 // ==========================================
 const SERVER_HOST = 'play.kingmc.vn';
 const SERVER_PORT = 25565;
-const BOT_VERSION = '1.21.11'; // Cập nhật theo đúng phiên bản mới nhất của KingMC
+const BOT_VERSION = '1.21.11'; // Đã cập nhật theo đúng phiên bản KingMC
 
 const API_KEY = process.env.API_KEY || "mat_khau_bao_mat_123";
 
@@ -21,7 +21,7 @@ const ON_HOUR  = 6, ON_MIN  = 0;
 // DANH SÁCH TÀI KHOẢN
 // ==========================================
 const ACCOUNTS = [
-  { id: 1, username: '_DTM', password: 'ditmemay.com', isMain: true },
+  { id: 1, username: 'BuilderSucVat', password: 'Zb7ZhMzgf9', isMain: true },
   { id: 2, username: 'BaoChauCX', password: 'manhdepzai', isMain: false }
 ];
 
@@ -100,7 +100,6 @@ function startSingleBot(account) {
       if (err.code !== 'ECONNRESET') console.log(`${logPrefix} [LỖI] ${err.message}`);
     });
 
-    // Log chi tiết khi bị đá để dễ debug
     bot.on('kicked', (reason) => {
       console.log(`${logPrefix} ⛔ BỊ SERVER ĐÁ: ${reason}`);
       botStatus[username] = "Bị đá (Kicked)";
@@ -113,22 +112,55 @@ function startSingleBot(account) {
       if (hasLoggedIn) return;
       hasLoggedIn = true;
 
+      // 1. Đăng nhập
       setTimeout(() => {
         bot.chat(`/dn ${password}`);
         console.log(`${logPrefix} [AUTH] Gửi lệnh đăng nhập.`);
       }, 3000);
 
+      // 2. Quét túi đồ và tìm vật phẩm để mở Menu (Đồng hồ/La bàn)
       setTimeout(() => {
         if (!isInMainServer) {
-          bot.setQuickBarSlot(4);
-          bot.activateItem();
+          console.log(`${logPrefix} [INVENTORY] Đang quét túi đồ sảnh chờ:`);
+          let foundSlot = -1;
+
+          for (let i = 0; i < 9; i++) {
+            const item = bot.inventory.slots[36 + i]; // 36-44 là 9 ô hotbar
+            if (item) {
+              console.log(`  - Ô ${i + 1}: ${item.name} (${item.displayName})`);
+              // Tìm đồng hồ (clock) hoặc la bàn (compass) hoặc menu
+              if (item.name.includes('clock') || item.name.includes('compass') || item.name.includes('menu')) {
+                foundSlot = i;
+              }
+            }
+          }
+
+          // Nếu tìm thấy, chọn ô đó và kích hoạt
+          if (foundSlot !== -1) {
+            console.log(`${logPrefix} [GUI] Tìm thấy vật phẩm Menu ở ô ${foundSlot + 1}. Đang kích hoạt...`);
+            bot.setQuickBarSlot(foundSlot); 
+            bot.activateItem();
+          } else {
+            // Nếu không tìm thấy, thử ô số 1 và ô số 5 như cũ
+            console.log(`${logPrefix} [GUI] Không thấy vật phẩm đặc biệt. Thử kích hoạt ô 1...`);
+            bot.setQuickBarSlot(0); 
+            bot.activateItem();
+            
+            setTimeout(() => {
+              if (!isInMainServer && !hasClickedAfkMenu) {
+                  console.log(`${logPrefix} [GUI] Thử lại với ô 5...`);
+                  bot.setQuickBarSlot(4); 
+                  bot.activateItem();
+              }
+            }, 2000);
+          }
         }
       }, 7000);
     });
 
     bot.on('windowOpen', (window) => {
       if (!isInMainServer) {
-        // Vào KingSMP
+        // 3. Vào KingSMP (Click slot 24)
         setTimeout(() => {
           try {
             bot.clickWindow(24, 0, 0);
@@ -145,14 +177,14 @@ function startSingleBot(account) {
           }
         }, 1000);
       } else if (!hasClickedAfkMenu) {
-        // Menu AFK -> Click ô số 8
+        // 4. Menu AFK -> Click ô số 8 (slot 7)
         setTimeout(() => {
           try {
             bot.clickWindow(7, 0, 0);
             hasClickedAfkMenu = true;
             console.log(`${logPrefix} [AFK] Đã click vào ô số 8 (Khu AFK).`);
 
-            // Đi bộ 10 bước
+            // 5. Đi bộ 10 bước
             if (!hasWalked) {
               hasWalked = true;
               setTimeout(() => {
@@ -185,6 +217,7 @@ function startSingleBot(account) {
       reconnectTimer = setTimeout(connect, waitTime);
     });
 
+    // 6. Nhảy chống AFK mỗi 30s
     afkInterval = setInterval(() => {
       if (isSleeping || !bot.entity) return;
       if (isInMainServer) {
@@ -326,7 +359,7 @@ app.get('/', (req, res) => {
 });
 
 // ==========================================
-// API RÚT TIỀN (GỌI TỪ WEB HOẶC BOT DISCORD)
+// API RÚT TIỀN
 // ==========================================
 app.post('/api/pay', (req, res) => {
   const { username, ign, amount } = req.body;
