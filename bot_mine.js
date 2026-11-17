@@ -22,7 +22,7 @@ const ON_HOUR  = 6, ON_MIN  = 0;
 // ==========================================
 const ACCOUNTS = [
   { username: '_DTM', password: 'ditmemay.com', isMain: true },  // Acc chính (dùng để rút tiền)
-  { username: 'Pumtrummod', password: 'manhne11', isMain: false } // Acc phụ (sửa lại pass)
+  { username: 'BaoChauCX', password: 'manhdepzai', isMain: false } // Acc phụ
 ];
 
 // ==========================================
@@ -64,6 +64,7 @@ function startSingleBot(account) {
   let hasLoggedIn = false;
   let isInMainServer = false;
   let hasClickedAfkMenu = false;
+  let hasWalked = false;
   let reconnectTimer = null;
   let afkInterval = null;
 
@@ -73,6 +74,7 @@ function startSingleBot(account) {
     hasLoggedIn = false;
     isInMainServer = false;
     hasClickedAfkMenu = false;
+    hasWalked = false;
     console.log(`\n${logPrefix} 🔄 [LẦN ${joinAttempt}] Đang kết nối...`);
 
     const bot = mineflayer.createBot({
@@ -95,13 +97,11 @@ function startSingleBot(account) {
       if (hasLoggedIn) return;
       hasLoggedIn = true;
 
-      // Đăng nhập
       setTimeout(() => {
         bot.chat(`/dn ${password}`);
         console.log(`${logPrefix} [AUTH] Gửi lệnh đăng nhập.`);
       }, 2000);
 
-      // Mở đồng hồ (ô 5)
       setTimeout(() => {
         if (!isInMainServer) {
           bot.setQuickBarSlot(4);
@@ -112,14 +112,13 @@ function startSingleBot(account) {
 
     bot.on('windowOpen', (window) => {
       if (!isInMainServer) {
-        // Click ô 25 để vào KingSMP
+        // Vào KingSMP
         setTimeout(() => {
           try {
             bot.clickWindow(24, 0, 0);
             isInMainServer = true;
             console.log(`${logPrefix} ✅ Đã vào KingSMP! Chuẩn bị /afk...`);
             
-            // Gõ lệnh /afk
             setTimeout(() => {
               bot.chat('/afk');
               console.log(`${logPrefix} [AFK] Gửi lệnh /afk`);
@@ -129,12 +128,31 @@ function startSingleBot(account) {
           }
         }, 1000);
       } else if (!hasClickedAfkMenu) {
-        // Menu Chọn Khu AFK hiện ra -> Click ô số 8 (slot 7)
+        // Menu AFK hiện ra -> Click ô 8
         setTimeout(() => {
           try {
             bot.clickWindow(7, 0, 0);
             hasClickedAfkMenu = true;
             console.log(`${logPrefix} [AFK] Đã click vào ô số 8 (Khu AFK).`);
+
+            // --- TÍNH NĂNG MỚI: DI CHUYỂN 10 BƯỚC ---
+            if (!hasWalked) {
+              hasWalked = true;
+              setTimeout(() => {
+                console.log(`${logPrefix} [WALK] Bắt đầu di chuyển 10 bước...`);
+                
+                // Đi tới 10 bước (giả lập bấm phím W)
+                bot.setControlState('forward', true);
+                
+                // 10 bước ~ 5 giây (mỗi bước 0.5s). Bạn có thể tăng giảm thời gian này.
+                setTimeout(() => {
+                  bot.setControlState('forward', false);
+                  console.log(`${logPrefix} [WALK] Đã đi xong 10 bước, đứng im AFK.`);
+                }, 5000); // 5000ms = 5 giây
+              }, 1500); // Đợi 1.5s sau khi click xong menu để bắt đầu đi
+            }
+            // ----------------------------------------
+
           } catch (e) {
             console.log(`${logPrefix} [LỖI AFK MENU] ${e.message}`);
           }
@@ -179,7 +197,6 @@ function startAllBots() {
   }
   isSleeping = false;
   
-  // Giãn cách 5 giây giữa các acc để tránh bị kick
   ACCOUNTS.forEach((acc, index) => {
     setTimeout(() => {
       if (!isSleeping) startSingleBot(acc);
@@ -210,11 +227,10 @@ setInterval(() => {
   }
 }, 30 * 1000);
 
-// Chạy lần đầu
 startAllBots();
 
 // ==========================================
-// API RÚT TIỀN (DÀNH CHO ACC CHÍNH)
+// API RÚT TIỀN
 // ==========================================
 app.post('/pay', (req, res) => {
   const authHeader = req.headers['authorization'];
